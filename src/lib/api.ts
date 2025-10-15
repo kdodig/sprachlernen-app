@@ -1,9 +1,28 @@
 import axios, { AxiosError } from "axios"
-import { Platform } from "react-native"
+import Constants from "expo-constants"
+import { Platform, SourceCode } from "react-native"
 import type { Level, Message } from "../types"
 
-const baseURL =
-  Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000"
+const resolveBaseURL = (): string => {
+  const scriptURL = SourceCode?.scriptURL ?? ""
+  const match = scriptURL.match(/^https?:\/\/([^/:]+)/)
+  const devHostFromBundle = match?.[1]
+  if (devHostFromBundle && devHostFromBundle !== "localhost" && devHostFromBundle !== "127.0.0.1") {
+    return `http://${devHostFromBundle}:3000`
+  }
+
+  const expoHost = Constants?.expoConfig?.hostUri
+  if (expoHost) {
+    const host = expoHost.split(":")[0]
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:3000`
+    }
+  }
+
+  return Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000"
+}
+
+export const baseURL = resolveBaseURL()
 
 const client = axios.create({
   baseURL,
@@ -57,4 +76,3 @@ export async function chatReply(
     throw new Error(errorMessage(err))
   }
 }
-
