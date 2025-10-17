@@ -83,4 +83,3 @@ const styles = StyleSheet.create({
   choiceText: { color: "#111827" },
   choiceTextActive: { color: "#1d4ed8", fontWeight: "600" }
 })
-

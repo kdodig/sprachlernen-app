@@ -59,11 +59,7 @@ export async function sttUpload(fileUri: string): Promise<string> {
   }
 }
 
-export async function chatReply(
-  level: Level,
-  history: Message[],
-  user: string
-): Promise<string> {
+export async function chatReply(level: Level, history: Message[], user: string): Promise<string> {
   try {
     const { data } = await client.post<{ reply: string }>("/chat", {
       level,
@@ -76,5 +72,3 @@ export async function chatReply(
     throw new Error(errorMessage(err))
   }
 }
-
-codex resume 0199e887-cf9d-7f73-a240-d44eed3c7132

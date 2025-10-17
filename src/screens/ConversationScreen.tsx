@@ -75,10 +75,7 @@ export default function ConversationScreen(): JSX.Element {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <View
-            style={[
-              styles.bubble,
-              item.role === "user" ? styles.userBubble : styles.botBubble
-            ]}
+            style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.botBubble]}
           >
             <Text style={styles.bubbleText}>{item.content}</Text>
           </View>
@@ -86,10 +83,7 @@ export default function ConversationScreen(): JSX.Element {
       />
       <View pointerEvents="box-none" style={styles.micContainer}>
         <Pressable
-          style={({ pressed }) => [
-            styles.ptt,
-            pressed || recording ? styles.pttActive : undefined
-          ]}
+          style={({ pressed }) => [styles.ptt, pressed || recording ? styles.pttActive : undefined]}
           onPressIn={handleStart}
           onPressOut={handleStop}
           disabled={busy}

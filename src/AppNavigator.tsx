@@ -28,20 +28,13 @@ export default function AppNavigator(): JSX.Element {
             title: "Sprachtrainer",
             headerRight: () => (
               <Pressable onPress={() => navigation.navigate("Settings")}>
-                <Text style={{ color: "#2563eb", fontWeight: "600" }}>
-                  Settings
-                </Text>
+                <Text style={{ color: "#2563eb", fontWeight: "600" }}>Settings</Text>
               </Pressable>
             )
           })}
         />
-        <Stack.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{ title: "Settings" }}
-        />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
       </Stack.Navigator>
     </NavigationContainer>
   )
 }
-
