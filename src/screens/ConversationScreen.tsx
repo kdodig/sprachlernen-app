@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from "react-native"
 import { Audio } from "expo-av"
 import * as Speech from "expo-speech"
@@ -8,7 +8,17 @@ import { useSessionStore } from "../store/session"
 import type { Message } from "../types"
 
 export default function ConversationScreen(): JSX.Element {
-  const { language, level, history, appendMessage, user } = useSessionStore()
+  const {
+    language,
+    level,
+    history,
+    historyByLang,
+    appendMessage,
+    appendMessageForLang,
+    targetLang,
+    profilesByLang,
+    user
+  } = useSessionStore()
   const [recording, setRecording] = useState<Audio.Recording | null>(null)
   const [busy, setBusy] = useState(false)
   const [lastTranscript, setLastTranscript] = useState<string | null>(null)
@@ -22,6 +32,29 @@ export default function ConversationScreen(): JSX.Element {
       }
     }
   }, [recording])
+
+  const activeHistory = useMemo(() => {
+    if (targetLang) return historyByLang[targetLang] ?? []
+    return history
+  }, [history, historyByLang, targetLang])
+
+  const activeLevel = useMemo(() => {
+    if (targetLang) {
+      return profilesByLang?.[targetLang]?.level ?? level
+    }
+    return level
+  }, [level, profilesByLang, targetLang])
+
+  const appendScopedMessage = useCallback(
+    (msg: Message) => {
+      if (targetLang) {
+        appendMessageForLang(targetLang, msg)
+      } else {
+        appendMessage(msg)
+      }
+    },
+    [appendMessage, appendMessageForLang, targetLang]
+  )
 
   const handleStart = useCallback(async () => {
     if (busy || recording) return
@@ -45,11 +78,12 @@ export default function ConversationScreen(): JSX.Element {
       const text = await sttUpload(uri)
       setLastTranscript(text)
       const userMsg: Message = { role: "user", content: text }
-      appendMessage(userMsg)
+      const nextHistory = [...activeHistory, userMsg]
+      appendScopedMessage(userMsg)
 
-      const reply = await chatReply(level, [...history, userMsg], user)
+      const reply = await chatReply(activeLevel, nextHistory, user)
       const botMsg: Message = { role: "assistant", content: reply }
-      appendMessage(botMsg)
+      appendScopedMessage(botMsg)
 
       Speech.speak(reply, {
         language,
@@ -63,14 +97,22 @@ export default function ConversationScreen(): JSX.Element {
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, history, language, level, recording, setLastTranscript, user])
+  }, [
+    activeHistory,
+    activeLevel,
+    appendScopedMessage,
+    language,
+    recording,
+    setLastTranscript,
+    user
+  ])
 
-  const btnLabel = recording ? "Release to Send" : "leck meine klöten"
+  const btnLabel = recording ? "Zum Senden loslassen" : "Gedrückt halten, um zu sprechen"
 
   return (
     <View style={styles.container}>
       <FlatList
-        data={history}
+        data={activeHistory}
         keyExtractor={(_, i) => `msg-${i}`}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (

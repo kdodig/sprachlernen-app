@@ -4,6 +4,7 @@ import { useRouter } from "expo-router"
 import * as Haptics from "expo-haptics"
 import { useSessionStore } from "@/src/store/session"
 import type { LanguageCode } from "@/src/types"
+import { toTtsLocale } from "@/src/lib/lang"
 
 export default function Onboarding() {
   const languageCodes: LanguageCode[] = ["de", "en", "es", "fr", "it", "pt", "ja", "ko", "zh"]
@@ -20,6 +21,9 @@ export default function Onboarding() {
   }
   const [selectedLanguage, setSelectedLanguage] = React.useState<LanguageCode | null>(null)
   const setTargetLang = useSessionStore((s) => s.setTargetLang)
+  const initLangProfile = useSessionStore((s) => s.initLangProfile)
+  const resetHistoryForLang = useSessionStore((s) => s.resetHistoryForLang)
+  const setLanguage = useSessionStore((s) => s.setLanguage)
   const router = useRouter()
   const hapticTimer = React.useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -44,6 +48,10 @@ export default function Onboarding() {
     if (!selectedLanguage) return
     stopHaptics()
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    initLangProfile(selectedLanguage)
+    resetHistoryForLang(selectedLanguage)
+    const locale = toTtsLocale(selectedLanguage)
+    setLanguage(locale)
     setTargetLang(selectedLanguage)
     router.replace("/trainer")
   }

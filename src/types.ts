@@ -7,7 +7,16 @@ export type Message = {
 }
 
 export type LanguageCode = "de" | "en" | "es" | "fr" | "it" | "pt" | "ja" | "ko" | "zh"
-export type Language = "ja-JP" | "en-US" | "de-DE"
+export type Language =
+  | "ja-JP"
+  | "en-US"
+  | "de-DE"
+  | "es-ES"
+  | "fr-FR"
+  | "it-IT"
+  | "pt-PT"
+  | "ko-KR"
+  | "zh-CN"
 
 export type Profile = {
   level: Level
@@ -19,7 +28,7 @@ export type Session = {
   profilesByLang: Partial<Record<LanguageCode, Profile>>
   historyByLang: Partial<Record<LanguageCode, Message[]>>
   language: Language
-  level: Level
   history: Message[]
+  level: Level
   user: string
 }

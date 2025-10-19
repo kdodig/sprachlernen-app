@@ -1,6 +1,6 @@
-import type { LanguageCode } from "@/src/types"
+import type { Language, LanguageCode } from "@/src/types"
 
-const ttsByCode: Record<LanguageCode, string> = {
+const ttsByCode: Record<LanguageCode, Language> = {
   de: "de-DE",
   en: "en-US",
   es: "es-ES",
@@ -12,5 +12,5 @@ const ttsByCode: Record<LanguageCode, string> = {
   zh: "zh-CN"
 }
 
-export const toTtsLocale = (code: LanguageCode | null, fallback = "en-US") =>
+export const toTtsLocale = (code: LanguageCode | null, fallback: Language = "en-US") =>
   code ? (ttsByCode[code] ?? fallback) : fallback
