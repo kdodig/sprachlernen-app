@@ -1,4 +1,4 @@
-import React, { useMemo } from "react"
+import React, { useMemo, type ReactElement } from "react"
 import { View, Text, StyleSheet, Pressable, TextInput } from "react-native"
 import { useSessionStore } from "../store/session"
 import type { Language, Level } from "../types"
@@ -6,7 +6,7 @@ import type { Language, Level } from "../types"
 const languages: Language[] = ["ja-JP", "en-US", "de-DE"]
 const levels: Level[] = ["beginner", "intermediate", "advanced"]
 
-export default function SettingsScreen(): JSX.Element {
+export default function SettingsScreen(): ReactElement {
   const { language, level, setLanguage, setLevel, user, setUser } = useSessionStore()
 
   const LangButtons = useMemo(

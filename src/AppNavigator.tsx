@@ -1,4 +1,4 @@
-import React from "react"
+import React, { type ReactElement } from "react"
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native"
 import { createNativeStackNavigator } from "@react-navigation/native-stack"
 import ConversationScreen from "./screens/ConversationScreen"
@@ -17,7 +17,7 @@ const navTheme = {
   colors: { ...DefaultTheme.colors, background: "#fff" }
 }
 
-export default function AppNavigator(): JSX.Element {
+export default function AppNavigator(): ReactElement {
   return (
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator>

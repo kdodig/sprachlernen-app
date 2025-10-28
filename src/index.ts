@@ -1,28 +1,27 @@
-import express from "express"
-import cors from "cors"
-import dotenv from "dotenv"
+/**
+ * Platzhalter-Stubs für die API-Domain.
+ *
+ * Die eigentliche Express-Implementierung lebt im Repository `sprachenlernen-api`.
+ * Diese Datei existiert nur, damit TypeScript beim Build keine Node-Abhängigkeiten
+ * im Expo-App-Bundle erwartet.
+ */
 
-dotenv.config()
+export type HealthResponse = { ok: true };
 
-const app = express()
-const port = process.env.PORT ?? 3000
+export type ErrorResponse = {
+  message: string;
+};
 
-app.use(cors())
-app.use(express.json())
+export type SttResponse = {
+  text: string;
+};
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true })
-})
+export type ChatResponse = {
+  reply: string;
+  audio?: string | null;
+  audioMimeType?: string | null;
+  ttsMock?: boolean;
+  ttsError?: string;
+};
 
-app.post("/stt", (_req, res) => {
-  res.status(501).json({ message: "STT endpoint not implemented yet" })
-})
-
-app.post("/chat", (_req, res) => {
-  res.status(501).json({ message: "Chat endpoint not implemented yet" })
-})
-
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`API listening on port ${port}`)
-})
+export {};
