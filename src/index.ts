@@ -6,22 +6,22 @@
  * im Expo-App-Bundle erwartet.
  */
 
-export type HealthResponse = { ok: true };
+export type HealthResponse = { ok: true }
 
 export type ErrorResponse = {
-  message: string;
-};
+  message: string
+}
 
 export type SttResponse = {
-  text: string;
-};
+  text: string
+}
 
 export type ChatResponse = {
-  reply: string;
-  audio?: string | null;
-  audioMimeType?: string | null;
-  ttsMock?: boolean;
-  ttsError?: string;
-};
+  reply: string
+  audio?: string | null
+  audioMimeType?: string | null
+  ttsMock?: boolean
+  ttsError?: string
+}
 
-export {};
+export {}

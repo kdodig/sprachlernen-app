@@ -36,5 +36,5 @@ export default function Index() {
 
   if (!hydrated) return null
 
-  return <Redirect href={targetLang ? "/trainer" : "/onboarding"} />
+  return <Redirect href={targetLang ? "/homepage" : "/onboarding"} />
 }

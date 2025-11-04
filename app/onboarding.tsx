@@ -53,7 +53,7 @@ export default function Onboarding() {
     const locale = toTtsLocale(selectedLanguage)
     setLanguage(locale)
     setTargetLang(selectedLanguage)
-    router.replace("/trainer")
+    router.replace("/homepage")
   }
 
   return (

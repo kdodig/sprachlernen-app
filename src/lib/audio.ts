@@ -1,4 +1,9 @@
-import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio"
+import {
+  AudioModule,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync
+} from "expo-audio"
 import type { AudioMode, AudioRecorder } from "expo-audio"
 
 const recordingMode: Partial<AudioMode> = {

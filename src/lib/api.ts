@@ -24,7 +24,9 @@ export type ChatResponse = {
 
 const resolveBaseURL = (): string => {
   const scriptURL =
-    typeof NativeModules?.SourceCode?.scriptURL === "string" ? NativeModules.SourceCode.scriptURL : ""
+    typeof NativeModules?.SourceCode?.scriptURL === "string"
+      ? NativeModules.SourceCode.scriptURL
+      : ""
   const match = scriptURL.match(/^https?:\/\/([^/:]+)/)
   const devHostFromBundle = match?.[1]
   if (devHostFromBundle && devHostFromBundle !== "localhost" && devHostFromBundle !== "127.0.0.1") {
@@ -85,12 +87,21 @@ const buildDebugInfo = (
   engineHeader: string,
   extraHeaderKeys: string[]
 ): ApiDebugInfo | undefined => {
-  const meta = typeof payloadDebug === "object" && payloadDebug !== null ? (payloadDebug as Record<string, unknown>) : undefined
+  const meta =
+    typeof payloadDebug === "object" && payloadDebug !== null
+      ? (payloadDebug as Record<string, unknown>)
+      : undefined
   const headerEntries = pickHeaders(headers, ["x-debug-id", engineHeader, ...extraHeaderKeys])
-  const metaTrace = meta && typeof meta["traceId"] === "string" ? (meta["traceId"] as string) : undefined
+  const metaTrace =
+    meta && typeof meta["traceId"] === "string" ? (meta["traceId"] as string) : undefined
   const traceId = getHeader(headers, "x-debug-id") ?? metaTrace
   const engine = getHeader(headers, engineHeader)
-  if (!traceId && !engine && (!meta || Object.keys(meta).length === 0) && Object.keys(headerEntries).length === 0) {
+  if (
+    !traceId &&
+    !engine &&
+    (!meta || Object.keys(meta).length === 0) &&
+    Object.keys(headerEntries).length === 0
+  ) {
     return undefined
   }
   const debugInfo: ApiDebugInfo = {}
@@ -125,16 +136,23 @@ export async function sttUpload(fileUri: string): Promise<SttResponse> {
       type: "audio/m4a"
     } as unknown as Blob
     form.append("file", file)
-    const response = await client.post<{ text: string; debug?: Record<string, unknown> }>("/stt", form, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
+    const response = await client.post<{ text: string; debug?: Record<string, unknown> }>(
+      "/stt",
+      form,
+      {
+        headers: { "Content-Type": "multipart/form-data" }
+      }
+    )
     const rawText = response.data?.text ?? ""
     const text = rawText.trim()
     if (!text) throw new Error("Empty STT response")
     if (text.startsWith("[mock]")) {
       throw new Error("STT ist im Mock-Modus (kein OPENAI_API_KEY auf dem Server)")
     }
-    const debug = buildDebugInfo(response.headers, response.data.debug, "x-stt-engine", ["x-debug-stt-duration", "x-debug-stt-bytes"])
+    const debug = buildDebugInfo(response.headers, response.data.debug, "x-stt-engine", [
+      "x-debug-stt-duration",
+      "x-debug-stt-bytes"
+    ])
     return {
       text,
       debug
@@ -151,12 +169,15 @@ export async function chatReply(
   targetLang: LanguageCode | null
 ): Promise<ChatResponse> {
   try {
-    const response = await client.post<Partial<ChatResponse> & { debug?: Record<string, unknown> }>("/chat", {
-      level,
-      history,
-      user,
-      targetLang
-    })
+    const response = await client.post<Partial<ChatResponse> & { debug?: Record<string, unknown> }>(
+      "/chat",
+      {
+        level,
+        history,
+        user,
+        targetLang
+      }
+    )
     const { data } = response
     if (!data?.reply) throw new Error("Empty chat response")
     const ttsHeaders = ["x-tts-trace", "x-mock-tts", "x-debug-tts-bytes"]
