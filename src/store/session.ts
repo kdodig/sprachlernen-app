@@ -3,6 +3,21 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { Language, LanguageCode, Level, Message, Session } from "../types"
 
+export type SessionReward = {
+  lang: LanguageCode
+  xpBefore: number
+  xpAfter: number
+  xpEarned: number
+  streakBefore: number
+  streakAfter: number
+  sessionLengthSec: number
+  userTurns: number
+  assistantTurns: number
+  completedAt: number
+  level: Level
+  user: string
+}
+
 type State = Session & {
   setTargetLang: (lang: LanguageCode) => void
   initLangProfile: (lang: LanguageCode) => void
@@ -14,6 +29,11 @@ type State = Session & {
   setUser: (user: string) => void
   appendMessage: (msg: Message) => void
   resetHistory: () => void
+  completeSessionForLang: (
+    lang: LanguageCode,
+    data: { xpEarned: number; sessionLengthSec: number; userTurns: number; assistantTurns: number }
+  ) => void
+  lastReward: SessionReward | null
 }
 
 export const useSessionStore = create<State>()(
@@ -26,6 +46,7 @@ export const useSessionStore = create<State>()(
       level: "beginner",
       history: [],
       user: "You",
+      lastReward: null,
       setTargetLang: (lang: LanguageCode) => set({ targetLang: lang }),
       initLangProfile: (lang: LanguageCode) =>
         set((s) => {
@@ -65,7 +86,43 @@ export const useSessionStore = create<State>()(
         set((s) => ({
           history: [...s.history, msg]
         })),
-      resetHistory: () => set({ history: [] })
+      resetHistory: () => set({ history: [] }),
+      completeSessionForLang: (lang, data) =>
+        set((s) => {
+          const existingProfile = s.profilesByLang?.[lang]
+          const baseLevel = existingProfile?.level ?? s.level
+          const fallbackProfile = existingProfile ?? { level: baseLevel, xp: 0, streak: 0 }
+          const xpBefore = fallbackProfile.xp ?? 0
+          const streakBefore = fallbackProfile.streak ?? 0
+          const xpAfter = xpBefore + data.xpEarned
+          const streakAfter = Math.max(streakBefore + 1, 1)
+          const nextProfile = {
+            ...fallbackProfile,
+            xp: xpAfter,
+            streak: streakAfter
+          }
+
+          return {
+            profilesByLang: {
+              ...s.profilesByLang,
+              [lang]: nextProfile
+            },
+            lastReward: {
+              lang,
+              xpBefore,
+              xpAfter,
+              xpEarned: data.xpEarned,
+              streakBefore,
+              streakAfter,
+              sessionLengthSec: data.sessionLengthSec,
+              userTurns: data.userTurns,
+              assistantTurns: data.assistantTurns,
+              completedAt: Date.now(),
+              level: nextProfile.level,
+              user: s.user
+            }
+          }
+        })
     }),
     {
       name: "sprachtrainer.session",

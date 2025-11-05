@@ -137,7 +137,9 @@ export default function ConversationScreen(): ReactElement {
     profilesByLang,
     user,
     resetHistory,
-    resetHistoryForLang
+    resetHistoryForLang,
+    initLangProfile,
+    completeSessionForLang
   } = useSessionStore()
   const effectiveTargetLang = useMemo<LanguageCode>(
     () => targetLang ?? localeToLanguageCode[language] ?? "en",
@@ -145,13 +147,12 @@ export default function ConversationScreen(): ReactElement {
   )
   const [recording, setRecording] = useState<RecorderHandle | null>(null)
   const [busy, setBusy] = useState(false)
-  const [lastTranscript, setLastTranscript] = useState<string | null>(null)
   const [hasPressed, setHasPressed] = useState(false)
-  const [debugState, setDebugState] = useState<DebugState>({})
   const isHeldRef = useRef(false)
   const recordingRef = useRef<RecorderHandle | null>(null)
   const playingSoundRef = useRef<AudioPlayer | null>(null)
   const playingSubscriptionRef = useRef<{ remove: () => void } | null>(null)
+  const sessionStartedAtRef = useRef<number>(Date.now())
 
   const cleanupPlayingSound = useCallback(() => {
     playingSubscriptionRef.current?.remove?.()
@@ -210,6 +211,12 @@ export default function ConversationScreen(): ReactElement {
     if (targetLang) return historyByLang[targetLang] ?? []
     return history
   }, [history, historyByLang, targetLang])
+
+  useEffect(() => {
+    if (activeHistory.length === 0) {
+      sessionStartedAtRef.current = Date.now()
+    }
+  }, [activeHistory.length])
 
   const activeLevel = useMemo(() => {
     if (targetLang) {
@@ -270,24 +277,7 @@ export default function ConversationScreen(): ReactElement {
       if (!transcript) {
         throw new Error("Die Transkription war leer")
       }
-      setLastTranscript(transcript)
       const sttSnapshot = extractSttDebug(sttResult.debug)
-      const sttEntry = sttSnapshot
-        ? { ...sttSnapshot, timestamp: Date.now(), savedPath: savedRecordingPath }
-        : sttResult.debug
-          ? {
-              traceId: sttResult.debug.traceId,
-              engine: sttResult.debug.engine,
-              timestamp: Date.now(),
-              savedPath: savedRecordingPath
-            }
-          : savedRecordingPath
-            ? { timestamp: Date.now(), savedPath: savedRecordingPath }
-            : undefined
-      setDebugState((prev) => ({
-        ...prev,
-        stt: sttEntry
-      }))
       const userMsg: Message = { role: "user", content: transcript }
       const nextHistory = [...activeHistory, userMsg]
       appendScopedMessage(userMsg)
@@ -339,24 +329,8 @@ export default function ConversationScreen(): ReactElement {
       } else if (!hasAudio) {
         console.warn("[tts] Kein Audio verfuegbar", { audioMimeType })
       }
-      setDebugState((prev) => ({
-        ...prev,
-        chat: {
-          traceId: chatSnapshot?.traceId ?? chatDebugInfo?.traceId,
-          engine: chatSnapshot?.engine ?? chatDebugInfo?.engine,
-          durationMs: chatSnapshot?.durationMs,
-          hasAudio,
-          ttsTraceId: chatSnapshot?.ttsTraceId,
-          timestamp: Date.now(),
-          savedPath: savedTtsPath
-        }
-      }))
-      if (savedTtsPath) {
-        console.log("[tts] saved to", savedTtsPath)
-      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown error"
-      setLastTranscript(`[error] ${message}`)
       Alert.alert("Conversation Error", message)
     } finally {
       setBusy(false)
@@ -369,15 +343,79 @@ export default function ConversationScreen(): ReactElement {
     recording,
     cleanupPlayingSound,
     setBusy,
-    setLastTranscript,
     user
   ])
 
   const router = useRouter()
 
+  const finalizeConversation = useCallback(async () => {
+    cleanupPlayingSound()
+    const activeRecording = recordingRef.current
+    if (activeRecording) {
+      try {
+        await stopRecording(activeRecording)
+      } catch (err) {
+        console.warn("[session/finishRecording]", err)
+      }
+      recordingRef.current = null
+    }
+    setRecording(null)
+    isHeldRef.current = false
+    setHasPressed(false)
+
+    const now = Date.now()
+    const sessionLengthSec = Math.max(10, Math.round((now - sessionStartedAtRef.current) / 1000))
+    const userTurns = activeHistory.filter((msg) => msg.role === "user").length
+    const assistantTurns = activeHistory.filter((msg) => msg.role === "assistant").length
+    const baseScore = userTurns * 14 + assistantTurns * 6
+    const paceBonus = Math.floor(sessionLengthSec / 60) * 8
+    const xpEarned = Math.max(20, baseScore + paceBonus)
+    const rewardLang = targetLang ?? effectiveTargetLang
+
+    initLangProfile(rewardLang)
+    completeSessionForLang(rewardLang, {
+      xpEarned,
+      sessionLengthSec,
+      userTurns,
+      assistantTurns
+    })
+
+    if (targetLang) resetHistoryForLang(targetLang)
+    else resetHistory()
+
+    sessionStartedAtRef.current = Date.now()
+    router.replace("/reward")
+  }, [
+    activeHistory,
+    cleanupPlayingSound,
+    completeSessionForLang,
+    effectiveTargetLang,
+    initLangProfile,
+    resetHistory,
+    resetHistoryForLang,
+    router,
+    targetLang,
+    setHasPressed,
+    setRecording,
+    stopRecording
+  ])
+
   const handleFinishConversation = useCallback(() => {
-    router.push("/homepage")
-  }, [router])
+    if (activeHistory.length === 0) {
+      void finalizeConversation()
+      return
+    }
+    Alert.alert("Session beenden?", "Moechtest du die Session wirklich abschliessen?", [
+      { text: "Weiter ueben", style: "cancel" },
+      {
+        text: "Belohnung anzeigen",
+        style: "destructive",
+        onPress: () => {
+          void finalizeConversation()
+        }
+      }
+    ])
+  }, [activeHistory.length, finalizeConversation])
 
   const handleRestart = useCallback(() => {
     if (targetLang) resetHistoryForLang(targetLang)
@@ -385,7 +423,17 @@ export default function ConversationScreen(): ReactElement {
     cleanupPlayingSound()
     recordingRef.current = null
     isHeldRef.current = false
-  }, [cleanupPlayingSound, resetHistoryForLang, resetHistory, targetLang])
+    setRecording(null)
+    setHasPressed(false)
+    sessionStartedAtRef.current = Date.now()
+  }, [
+    cleanupPlayingSound,
+    resetHistoryForLang,
+    resetHistory,
+    targetLang,
+    setRecording,
+    setHasPressed
+  ])
 
   const btnLabel = hasPressed ? "" : "Hold to speak!"
 
@@ -402,12 +450,15 @@ export default function ConversationScreen(): ReactElement {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <View pointerEvents="none" style={styles.lastAssistantPreview}>
-          <Text style={styles.lastAssistantPreviewLabel}>LETZTE ANTWORT</Text>
-          <Text numberOfLines={3} ellipsizeMode="tail" style={styles.lastAssistantPreviewText}>
-            {lastAssistantMessage?.content ?? ""}
-          </Text>
+        <View pointerEvents="none" style={styles.topSection}>
+          <View style={styles.lastAssistantPreview}>
+            <Text style={styles.lastAssistantPreviewLabel}>LETZTE ANTWORT</Text>
+            <Text numberOfLines={3} ellipsizeMode="tail" style={styles.lastAssistantPreviewText}>
+              {lastAssistantMessage?.content ?? ""}
+            </Text>
+          </View>
         </View>
+
         <Pressable
           style={({ pressed }) => [styles.ptt, pressed || recording ? styles.pttActive : undefined]}
           onPressIn={handleStart}
@@ -420,22 +471,25 @@ export default function ConversationScreen(): ReactElement {
             <Text style={styles.pttText}>{btnLabel}</Text>
           )}
         </Pressable>
-        <View style={styles.actionRow}>
-          <Pressable
-            style={({ pressed }) => [styles.restartButton, pressed ? styles.restartButtonPressed : undefined]}
-            onPress={handleRestart}
-            accessibilityLabel="Restart conversation"
-          >
-            <Text style={styles.restartIcon}>{"\u21BA"}</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.finishButton, pressed ? styles.finishButtonPressed : undefined]}
-            onPress={handleFinishConversation}
-          >
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.finishButtonText}>
-              Finish Conversation
-            </Text>
-          </Pressable>
+
+        <View style={styles.bottomSection}>
+          <View style={styles.actionRow}>
+            <Pressable
+              style={({ pressed }) => [styles.restartButton, pressed ? styles.restartButtonPressed : undefined]}
+              onPress={handleRestart}
+              accessibilityLabel="Restart conversation"
+            >
+              <Text style={styles.restartIcon}>{"\u21BA"}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.finishButton, pressed ? styles.finishButtonPressed : undefined]}
+              onPress={handleFinishConversation}
+            >
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.finishButtonText}>
+                Finish Session
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </View>
@@ -452,15 +506,27 @@ const styles = StyleSheet.create({
     paddingVertical: 32
   },
   content: {
+    flex: 1,
     width: "100%",
     maxWidth: 360,
     alignItems: "center",
     justifyContent: "center",
-    gap: 24
+    position: "relative"
+  },
+  topSection: {
+    position: "absolute",
+    top: 150,
+    width: "100%",
+    alignItems: "center"
+  },
+  bottomSection: {
+    width: "100%",
+    position: "absolute",
+    bottom: 32,
+    alignItems: "center"
   },
   ptt: {
     backgroundColor: "#E16632",
-    marginBottom: 30,
     width: 168,
     height: 168,
     borderRadius: 84,
@@ -525,6 +591,7 @@ const styles = StyleSheet.create({
   },
   finishButtonText: { color: "#F9F8F8", fontSize: 16, fontWeight: "700" },
   actionRow: {
+    paddingHorizontal: 50,
     flexDirection: "row",
     alignItems: "center",
     width: "100%",
