@@ -160,6 +160,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between"
   },
   header: {
+    marginTop: 0,
     width: "100%",
     alignItems: "center"
   },
