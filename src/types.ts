@@ -32,3 +32,22 @@ export type Session = {
   level: Level
   user: string
 }
+
+export type PersonalProfile = {
+  firstName: string
+  lastName: string
+  username: string
+  email: string
+  phone: string
+  password: string
+}
+
+export type Preferences = {
+  pushNotifications: boolean
+  dailyReminder: boolean
+  weeklySummary: boolean
+  soundEffects: boolean
+  reminderTime: "08:00" | "12:00" | "18:00" | "21:00"
+  practiceFocus: "conversation" | "vocab" | "grammar"
+  goalIntensity: "casual" | "balanced" | "intense"
+}

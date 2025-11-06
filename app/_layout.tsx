@@ -14,7 +14,7 @@ export default function RootLayout() {
         <Stack.Screen name="homepage" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="trainer" options={{ headerShown: false }} />
-        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings", headerShown: false }} />
         <Stack.Screen name="reward" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
       </Stack>

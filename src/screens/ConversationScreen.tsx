@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react"
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native"
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from "react-native"
+import { useRouter } from "expo-router"
 import * as FileSystem from "expo-file-system/legacy"
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio"
-import { useRouter } from "expo-router"
 import { chatReply, sttUpload, type ApiDebugInfo } from "../lib/api"
 import { startRecording, stopRecording, type RecorderHandle } from "../lib/audio"
 import { useSessionStore } from "../store/session"
 import type { Language, LanguageCode, Message } from "../types"
+
 const ensureDirExists = async (dir: string): Promise<void> => {
   const info = await FileSystem.getInfoAsync(dir)
   if (!info.exists) {
@@ -141,13 +142,16 @@ export default function ConversationScreen(): ReactElement {
     initLangProfile,
     completeSessionForLang
   } = useSessionStore()
+  const router = useRouter()
   const effectiveTargetLang = useMemo<LanguageCode>(
     () => targetLang ?? localeToLanguageCode[language] ?? "en",
     [targetLang, language]
   )
   const [recording, setRecording] = useState<RecorderHandle | null>(null)
   const [busy, setBusy] = useState(false)
+  const [lastTranscript, setLastTranscript] = useState<string | null>(null)
   const [hasPressed, setHasPressed] = useState(false)
+  const [debugState, setDebugState] = useState<DebugState>({})
   const isHeldRef = useRef(false)
   const recordingRef = useRef<RecorderHandle | null>(null)
   const playingSoundRef = useRef<AudioPlayer | null>(null)
@@ -207,10 +211,10 @@ export default function ConversationScreen(): ReactElement {
     }
   }, [cleanupPlayingSound])
 
-  const activeHistory = useMemo(() => {
-    if (targetLang) return historyByLang[targetLang] ?? []
-    return history
-  }, [history, historyByLang, targetLang])
+const activeHistory = useMemo(() => {
+  if (targetLang) return historyByLang[targetLang] ?? []
+  return history
+}, [history, historyByLang, targetLang])
 
   useEffect(() => {
     if (activeHistory.length === 0) {
@@ -218,11 +222,11 @@ export default function ConversationScreen(): ReactElement {
     }
   }, [activeHistory.length])
 
-  const activeLevel = useMemo(() => {
-    if (targetLang) {
-      return profilesByLang?.[targetLang]?.level ?? level
-    }
-    return level
+const activeLevel = useMemo(() => {
+  if (targetLang) {
+    return profilesByLang?.[targetLang]?.level ?? level
+  }
+  return level
   }, [level, profilesByLang, targetLang])
 
   const appendScopedMessage = useCallback(
@@ -277,7 +281,24 @@ export default function ConversationScreen(): ReactElement {
       if (!transcript) {
         throw new Error("Die Transkription war leer")
       }
+      setLastTranscript(transcript)
       const sttSnapshot = extractSttDebug(sttResult.debug)
+      const sttEntry = sttSnapshot
+        ? { ...sttSnapshot, timestamp: Date.now(), savedPath: savedRecordingPath }
+        : sttResult.debug
+          ? {
+              traceId: sttResult.debug.traceId,
+              engine: sttResult.debug.engine,
+              timestamp: Date.now(),
+              savedPath: savedRecordingPath
+            }
+          : savedRecordingPath
+            ? { timestamp: Date.now(), savedPath: savedRecordingPath }
+            : undefined
+      setDebugState((prev) => ({
+        ...prev,
+        stt: sttEntry
+      }))
       const userMsg: Message = { role: "user", content: transcript }
       const nextHistory = [...activeHistory, userMsg]
       appendScopedMessage(userMsg)
@@ -329,8 +350,24 @@ export default function ConversationScreen(): ReactElement {
       } else if (!hasAudio) {
         console.warn("[tts] Kein Audio verfuegbar", { audioMimeType })
       }
+      setDebugState((prev) => ({
+        ...prev,
+        chat: {
+          traceId: chatSnapshot?.traceId ?? chatDebugInfo?.traceId,
+          engine: chatSnapshot?.engine ?? chatDebugInfo?.engine,
+          durationMs: chatSnapshot?.durationMs,
+          hasAudio,
+          ttsTraceId: chatSnapshot?.ttsTraceId,
+          timestamp: Date.now(),
+          savedPath: savedTtsPath
+        }
+      }))
+      if (savedTtsPath) {
+        console.log("[tts] saved to", savedTtsPath)
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown error"
+      setLastTranscript(`[error] ${message}`)
       Alert.alert("Conversation Error", message)
     } finally {
       setBusy(false)
@@ -343,10 +380,9 @@ export default function ConversationScreen(): ReactElement {
     recording,
     cleanupPlayingSound,
     setBusy,
+    setLastTranscript,
     user
   ])
-
-  const router = useRouter()
 
   const finalizeConversation = useCallback(async () => {
     cleanupPlayingSound()
@@ -394,10 +430,7 @@ export default function ConversationScreen(): ReactElement {
     resetHistory,
     resetHistoryForLang,
     router,
-    targetLang,
-    setHasPressed,
-    setRecording,
-    stopRecording
+    targetLang
   ])
 
   const handleFinishConversation = useCallback(() => {
@@ -435,30 +468,52 @@ export default function ConversationScreen(): ReactElement {
     setHasPressed
   ])
 
-  const btnLabel = hasPressed ? "" : "Hold to speak!"
-
-  const lastAssistantMessage = useMemo(() => {
-    for (let i = activeHistory.length - 1; i >= 0; i -= 1) {
-      const message = activeHistory[i]
-      if (message.role === "assistant") {
-        return message
+  const btnLabel = hasPressed ? "" : "Gedrueckt halten, um zu sprechen"
+  const debugLines = useMemo(() => {
+    const lines: string[] = []
+    const stt = debugState.stt
+    if (stt) {
+      lines.push(`[stt] trace: ${stt.traceId ?? "-"}`)
+      if (stt.engine) lines.push(`[stt] engine: ${stt.engine}`)
+      if (typeof stt.durationMs === "number") lines.push(`[stt] dauer: ${Math.round(stt.durationMs)} ms`)
+      if (typeof stt.bytes === "number") lines.push(`[stt] upload: ${stt.bytes} B`)
+      if (typeof stt.textLength === "number") lines.push(`[stt] textlaenge: ${stt.textLength}`)
+      if (stt.savedPath) lines.push(`[stt] file: ${stt.savedPath}`)
+      if (stt.stage) {
+        lines.push(
+          stt.stage === "mock"
+            ? "[stt] hinweis: OpenAI deaktiviert (mock)"
+            : `[stt] phase: ${stt.stage}`
+        )
       }
     }
-    return undefined
-  }, [activeHistory])
+    const chat = debugState.chat
+    if (chat) {
+      lines.push(`[chat] trace: ${chat.traceId ?? "-"}`)
+      if (chat.engine) lines.push(`[chat] engine: ${chat.engine}`)
+      if (typeof chat.durationMs === "number") lines.push(`[chat] dauer: ${Math.round(chat.durationMs)} ms`)
+      if (typeof chat.hasAudio === "boolean") lines.push(`[chat] audio: ${chat.hasAudio ? "ja" : "nein"}`)
+      if (chat.ttsTraceId) lines.push(`[chat] tts-trace: ${chat.ttsTraceId}`)
+      if (chat.savedPath) lines.push(`[chat] file: ${chat.savedPath}`)
+    }
+    return lines
+  }, [debugState])
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
-        <View pointerEvents="none" style={styles.topSection}>
-          <View style={styles.lastAssistantPreview}>
-            <Text style={styles.lastAssistantPreviewLabel}>LETZTE ANTWORT</Text>
-            <Text numberOfLines={3} ellipsizeMode="tail" style={styles.lastAssistantPreviewText}>
-              {lastAssistantMessage?.content ?? ""}
-            </Text>
+      <FlatList
+        data={activeHistory}
+        keyExtractor={(_, i) => `msg-${i}`}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <View
+            style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.botBubble]}
+          >
+            <Text style={styles.bubbleText}>{item.content}</Text>
           </View>
-        </View>
-
+        )}
+      />
+      <View pointerEvents="box-none" style={styles.micContainer}>
         <Pressable
           style={({ pressed }) => [styles.ptt, pressed || recording ? styles.pttActive : undefined]}
           onPressIn={handleStart}
@@ -466,157 +521,195 @@ export default function ConversationScreen(): ReactElement {
           disabled={busy}
         >
           {busy ? (
-            <ActivityIndicator color="#F9F8F8" />
+            <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.pttText}>{btnLabel}</Text>
           )}
         </Pressable>
-
-        <View style={styles.bottomSection}>
-          <View style={styles.actionRow}>
-            <Pressable
-              style={({ pressed }) => [styles.restartButton, pressed ? styles.restartButtonPressed : undefined]}
-              onPress={handleRestart}
-              accessibilityLabel="Restart conversation"
-            >
-              <Text style={styles.restartIcon}>{"\u21BA"}</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.finishButton, pressed ? styles.finishButtonPressed : undefined]}
-              onPress={handleFinishConversation}
-            >
-              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.finishButtonText}>
-                Finish Session
-              </Text>
-            </Pressable>
+        {lastTranscript || debugLines.length > 0 ? (
+          <View pointerEvents="none" style={styles.debugContainer}>
+            {lastTranscript ? (
+              <>
+                <Text style={styles.debugTitle}>Transcript</Text>
+                <Text style={styles.debugText}>{lastTranscript}</Text>
+              </>
+            ) : null}
+            {debugLines.length > 0 ? (
+              <>
+                <Text
+                  style={[
+                    styles.debugTitle,
+                    lastTranscript ? styles.debugTitleSpacing : undefined
+                  ]}
+                >
+                  Debug
+                </Text>
+                {debugLines.map((line, index) => (
+                  <Text key={`debug-${index}`} style={styles.debugLine}>
+                    {line}
+                  </Text>
+                ))}
+              </>
+            ) : null}
           </View>
-        </View>
+        ) : null}
+      </View>
+      <View style={styles.bottomBar}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.restartButton,
+            pressed ? styles.restartButtonPressed : undefined
+          ]}
+          onPress={handleRestart}
+          accessibilityLabel="Session neu starten"
+        >
+          <Text style={styles.restartIcon}>{"\u21BA"}</Text>
+          <Text style={styles.restartLabel}>Reset</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.finishButton,
+            pressed ? styles.finishButtonPressed : undefined
+          ]}
+          onPress={handleFinishConversation}
+        >
+          <Text style={styles.finishButtonText}>Session beenden</Text>
+        </Pressable>
       </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 32
+  container: { flex: 1, backgroundColor: "#fff" },
+  list: { padding: 16, paddingBottom: 200, gap: 8 },
+  bubble: {
+    padding: 12,
+    borderRadius: 12,
+    maxWidth: "85%"
   },
-  content: {
-    flex: 1,
-    width: "100%",
-    maxWidth: 360,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative"
+  userBubble: {
+    alignSelf: "flex-end",
+    backgroundColor: "#dbeafe"
   },
-  topSection: {
+  botBubble: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f3f4f6"
+  },
+  bubbleText: { fontSize: 16, color: "#111827" },
+  micContainer: {
     position: "absolute",
-    top: 150,
-    width: "100%",
-    alignItems: "center"
-  },
-  bottomSection: {
-    width: "100%",
-    position: "absolute",
-    bottom: 32,
-    alignItems: "center"
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center"
   },
   ptt: {
-    backgroundColor: "#E16632",
-    width: 168,
-    height: 168,
-    borderRadius: 84,
+    backgroundColor: "#2563eb",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2A2A23",
+    shadowColor: "#1d4ed8",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 8
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 6
   },
   pttActive: {
-    backgroundColor: "#E04F28"
+    backgroundColor: "#1d4ed8"
   },
-  pttText: { color: "#F9F8F8", fontSize: 18, fontWeight: "700", textAlign: "center" },
-  lastAssistantPreview: {
-    width: "100%",
-    backgroundColor: "#F9F8F8",
-    borderRadius: 28,
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    shadowColor: "#2A2A23",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 5
+  pttText: { color: "#fff", fontSize: 18, fontWeight: "600", textAlign: "center" },
+  debugContainer: {
+    marginTop: 200,
+    width: "80%",
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "rgba(17, 24, 39, 0.85)"
   },
-  lastAssistantPreviewLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#6B6B61",
-    textTransform: "uppercase",
+  debugTitle: {
+    color: "#93c5fd",
+    fontSize: 12,
     letterSpacing: 1,
-    marginBottom: 8
+    textTransform: "uppercase",
+    marginBottom: 6
   },
-  lastAssistantPreviewText: {
-    color: "#2A2A23",
-    fontSize: 16,
+  debugText: {
+    color: "#e5e7eb",
+    fontSize: 14,
+    lineHeight: 20
+  },
+  debugTitleSpacing: {
+    marginTop: 12
+  },
+  debugLine: {
+    color: "#bfdbfe",
+    fontSize: 12,
+    lineHeight: 18
+  },
+  bottomBar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16
+  },
+  restartButton: {
+    width: 72,
+    paddingVertical: 14,
+    borderRadius: 24,
+    backgroundColor: "#eff6ff",
+    borderWidth: 2,
+    borderColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  restartButtonPressed: {
+    opacity: 0.85
+  },
+  restartIcon: {
+    color: "#2563eb",
+    fontSize: 20,
+    fontWeight: "700"
+  },
+  restartLabel: {
+    marginTop: 6,
+    fontSize: 11,
     fontWeight: "600",
-    textAlign: "center",
-    minHeight: 48
+    color: "#2563eb",
+    textTransform: "uppercase",
+    letterSpacing: 0.6
   },
   finishButton: {
     flex: 1,
-    backgroundColor: "#E04F28",
-    paddingVertical: 14,
-    paddingHorizontal: 24,
     borderRadius: 28,
+    backgroundColor: "#2563eb",
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2A2A23",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
+    shadowColor: "#1d4ed8",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
     shadowRadius: 18,
-    elevation: 6,
-    marginLeft:0
+    elevation: 6
   },
   finishButtonPressed: {
-    transform: [{ scale: 0.97 }],
-    shadowOpacity: 0.2
+    opacity: 0.9
   },
-  finishButtonText: { color: "#F9F8F8", fontSize: 16, fontWeight: "700" },
-  actionRow: {
-    paddingHorizontal: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    maxWidth: 360,
-    alignSelf: "center"
-  },
-  restartButton: {
-    width: 56,
-    height: 56,
-    backgroundColor: "#F9F8F8",
-    borderRadius: 25,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#E16632",
-    shadowColor: "#2A2A23",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 5,
-    marginRight: 8
-  },
-  restartButtonPressed: {
-    transform: [{ scale: 0.97 }],
-    shadowOpacity: 0.18
-  },
-  restartIcon: { color: "#E16632", fontSize: 18, fontWeight: "700" }
+  finishButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700"
+  }
 })
+
+
+
+
+
