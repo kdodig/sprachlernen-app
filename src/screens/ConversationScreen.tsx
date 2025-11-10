@@ -1,10 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react"
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Modal, ScrollView } from "react-native"
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  Animated
+} from "react-native"
 import type { PressableStateCallbackType } from "react-native"
 import { useRouter } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { Ionicons, Feather } from "@expo/vector-icons"
 import GlassCard from "../lib/components/GlassCard"
 import GooeyOrb from "../lib/components/GooeyOrb"
+import Background from "../lib/components/background"
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio"
 import { chatReply, sttUpload } from "../lib/api"
 import { startRecording, stopRecording, type RecorderHandle } from "../lib/audio"
@@ -42,6 +55,8 @@ export default function ConversationScreen(): ReactElement {
     completeSessionForLang
   } = useSessionStore()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const bottomBarAnim = useRef(new Animated.Value(0)).current
   const effectiveTargetLang = useMemo<LanguageCode>(
     () => targetLang ?? localeToLanguageCode[language] ?? "en",
     [targetLang, language]
@@ -147,6 +162,18 @@ export default function ConversationScreen(): ReactElement {
     }
   }, [cleanupPlayingSound, stopActiveRecording])
 
+  useEffect(() => {
+    bottomBarAnim.setValue(0)
+    Animated.parallel([
+      Animated.timing(bottomBarAnim, {
+        toValue: 1,
+        duration: 420,
+        delay: 140,
+        useNativeDriver: true
+      })
+    ]).start()
+  }, [bottomBarAnim])
+
   const activeHistory = useMemo(() => {
     if (targetLang) return historyByLang[targetLang] ?? []
     return history
@@ -171,6 +198,21 @@ export default function ConversationScreen(): ReactElement {
 
   const progressRatio = Math.min(1, userTurnCount / SENTENCE_TARGET)
   const progressPercent = `${progressRatio * 100}%`
+  const floatingBarAnimatedStyle = useMemo(
+    () => ({
+      opacity: bottomBarAnim,
+      transform: [
+        {
+          translateY: bottomBarAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [16, 0]
+          })
+        }
+      ]
+    }),
+    [bottomBarAnim]
+  )
+  const floatingBarBottomInset = Math.max(insets.bottom, 18)
 
   const activeLevel = useMemo(() => {
     if (targetLang) {
@@ -312,6 +354,14 @@ export default function ConversationScreen(): ReactElement {
     targetLang
   ])
 
+  const handleSlowSpeech = useCallback(() => {
+    console.log("slow speech")
+  }, [])
+
+  const handleDictionaryPress = useCallback(() => {
+    router.push("/dictionary")
+  }, [router])
+
   const handleFinishConversation = useCallback(() => {
     setFinishConfirmVisible(true)
   }, [])
@@ -325,47 +375,29 @@ export default function ConversationScreen(): ReactElement {
     void finalizeConversation()
   }, [finalizeConversation])
 
-  const handleRestart = useCallback(() => {
-    void (async () => {
-      await stopActiveRecording()
-      if (targetLang) resetHistoryForLang(targetLang)
-      else resetHistory()
-      resetInteractionState()
-    })()
-  }, [resetHistoryForLang, resetHistory, resetInteractionState, stopActiveRecording, targetLang])
-
   const btnLabel = hasPressed ? "" : ""
-  const restartButtonStyle = useCallback(
+  const iconButtonStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
-      styles.restartButton,
-      pressed ? styles.restartButtonPressed : undefined
+      styles.roundButton,
+      pressed ? styles.roundButtonPressed : undefined
     ],
     []
   )
-  const finishButtonStyle = useCallback(
+  const dictionaryButtonStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
-      styles.finishButton,
-      pressed ? styles.finishButtonPressed : undefined
+      styles.dictionaryPressable,
+      styles.dictionaryRaised,
+      pressed ? styles.dictionaryPressablePressed : undefined
     ],
     []
   )
 
   return (
     <View style={styles.screen}>
-      <LinearGradient
-        colors={["#FFF5FA", "#FDEDF6", "#F6E4F3", "#EEDFD9", "#E4D3C7"]}
-        locations={[0, 0.25, 0.55, 0.8, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.gradientBackground}
-      />
-      <LinearGradient
-        colors={["rgba(255,255,255,0.55)", "rgba(255,255,255,0)"]}
-        start={{ x: 0.3, y: 0 }}
-        end={{ x: 0.7, y: 0.6 }}
-        style={styles.gradientHighlight}
-      />
-      <GlassCard style={styles.conversationGlass} tint="light" intensity={45}>
+      <View pointerEvents="none" style={styles.backgroundLayer}>
+        <Background />
+      </View>
+      <GlassCard style={styles.conversationGlass} tint="light" intensity={25}>
         <LinearGradient
           colors={["rgba(152,205,255,0.35)", "rgba(152,205,255,0)"]}
           start={{ x: 0.5, y: 1 }}
@@ -388,7 +420,7 @@ export default function ConversationScreen(): ReactElement {
             <GlassCard style={styles.progressTrackCard} intensity={25}>
               <View style={styles.progressTrack}>
                 <LinearGradient
-                  colors={["rgba(255,140,196,0.95)", "rgba(157,220,255,0.9)"]}
+                  colors={["#FBD5E3", "#D9C7F8", "#AEE4FF"]}
                   start={{ x: 0, y: 0.5 }}
                   end={{ x: 1, y: 0.5 }}
                   style={[styles.progressIndicator, { width: progressPercent }]}
@@ -416,7 +448,7 @@ export default function ConversationScreen(): ReactElement {
                 <Text style={styles.messageBody}>
                   {latestBotMessage
                     ? latestBotMessage.content
-                    : "Noch keine Antwort - starte die Session mit deiner Stimme."}
+                    : "Noch keine Antwort."}
                 </Text>
                 <Text style={styles.messageHint}>
                   {activeHistory.length === 0 ? "Noch keine Verlaeufe" : "Tippen für Chat-Historie"}
@@ -434,7 +466,7 @@ export default function ConversationScreen(): ReactElement {
                 disabled={busy}
               >
                 <View style={styles.gooeyWrapper}>
-                  <GooeyOrb size={200} colorA="#FF7CC7" colorB="#9DDCFF" speed={1.05} />
+                  <GooeyOrb size={200} colorA="#E16632" colorB="#E04F28" speed={1.05} />
                   <View style={styles.pttOverlay}>
                     {busy ? (
                       <ActivityIndicator color="#fff" />
@@ -449,33 +481,53 @@ export default function ConversationScreen(): ReactElement {
         </View>
       </View>
     </GlassCard>
-      <View style={styles.bottomBar}>
-        <GlassCard style={styles.bottomBarCard} intensity={40}>
-          <LinearGradient
-            colors={["rgba(160,206,255,0.25)", "rgba(160,206,255,0)"]}
-            start={{ x: 0.5, y: 1 }}
-            end={{ x: 0.5, y: 0 }}
-            style={styles.bottomBarGlow}
-            pointerEvents="none"
-          />
-          <View style={styles.bottomBarContent}>
-            <Pressable
-              style={restartButtonStyle}
-              onPress={handleRestart}
-              accessibilityLabel="Session neu starten"
-            >
-              <GlassCard style={styles.restartCard} intensity={35}>
-                <Text style={styles.restartIcon}>{"\u21BA"}</Text>
-              </GlassCard>
-            </Pressable>
-            <Pressable style={finishButtonStyle} onPress={handleFinishConversation}>
-              <GlassCard style={styles.finishCard} intensity={42} tint="light">
-                <Text style={styles.finishButtonText}>Session beenden</Text>
-              </GlassCard>
-            </Pressable>
-          </View>
-        </GlassCard>
-      </View>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.floatingBarContainer,
+          floatingBarAnimatedStyle,
+          { paddingBottom: floatingBarBottomInset }
+        ]}
+      >
+        <View style={styles.floatingBarContent}>
+          <Pressable
+            style={iconButtonStyle}
+            onPress={handleSlowSpeech}
+            accessibilityRole="button"
+            accessibilityLabel="audio langsamer abspielen"
+            android_ripple={{ color: "rgba(255,255,255,0.2)" }}
+            hitSlop={8}
+          >
+            <GlassCard style={styles.roundButtonCard} intensity={20}>
+              <Ionicons name="turtle" size={22} color="#1F1F1F" />
+            </GlassCard>
+          </Pressable>
+          <Pressable
+            style={dictionaryButtonStyle}
+            onPress={handleDictionaryPress}
+            accessibilityRole="button"
+            accessibilityLabel="W\u00F6rterbuch \u00F6ffnen"
+          android_ripple={{ color: "rgba(255,255,255,0.2)", borderless: false }}
+          hitSlop={6}
+        >
+          <GlassCard style={styles.dictionaryGlass} tint="light" intensity={22}>
+            <Text style={styles.dictionaryLabel}>{"Wörterbuch"}</Text>
+          </GlassCard>
+        </Pressable>
+          <Pressable
+            style={iconButtonStyle}
+            onPress={handleFinishConversation}
+            accessibilityRole="button"
+            accessibilityLabel="Session beenden"
+            android_ripple={{ color: "rgba(255,255,255,0.2)" }}
+            hitSlop={8}
+          >
+            <GlassCard style={styles.roundButtonCard} intensity={20}>
+              <Feather name="x" size={22} color="#1F1F1F" />
+            </GlassCard>
+          </Pressable>
+        </View>
+      </Animated.View>
       <Modal
         transparent
         visible={historyVisible}
@@ -554,21 +606,17 @@ export default function ConversationScreen(): ReactElement {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F6F1F4" },
-  gradientBackground: { ...StyleSheet.absoluteFillObject },
-  gradientHighlight: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.8
-  },
+  screen: { flex: 1 },
+  backgroundLayer: { ...StyleSheet.absoluteFillObject },
   conversationGlass: {
     position: "absolute",
-    top: 18,
+    top: 0,
     left: 0,
     right: 0,
     bottom: 0,
     borderRadius: 36,
     padding: 0,
-    backgroundColor: "rgba(252, 249, 251, 0.78)",
+    backgroundColor: "rgba(252, 249, 251, 0.08)",
     overflow: "hidden",
     shadowColor: "rgba(200, 189, 205, 0.6)",
     shadowOffset: { width: 0, height: 14 },
@@ -607,10 +655,10 @@ const styles = StyleSheet.create({
   progressTrackCard: {
     borderRadius: 999,
     padding: 4,
-    backgroundColor: "rgba(249, 231, 244, 0.6)",
+    backgroundColor: "rgba(255, 255, 255, 0.45)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.65)",
-    shadowColor: "rgba(226, 183, 210, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.85)",
+    shadowColor: "rgba(178, 138, 247, 0.35)",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 14,
@@ -619,7 +667,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 12,
     borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
     overflow: "hidden"
   },
   progressIndicator: {
@@ -648,7 +696,7 @@ const styles = StyleSheet.create({
   },
   messageCard: {
     position: "absolute",
-    top: -70,
+    top: -40,
     width: "90%",
     alignSelf: "center",
     borderRadius: 24,
@@ -700,7 +748,7 @@ const styles = StyleSheet.create({
     height: 220,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#F48FD3",
+    shadowColor: "#E16632",
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.35,
     shadowRadius: 38,
@@ -713,74 +761,81 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   pttText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
-  bottomBar: {
+  floatingBarContainer: {
     position: "absolute",
-    left: 28,
-    right: 28,
-    bottom: 50
+    left: 0,
+    right: 0,
+    bottom: 30,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    pointerEvents: "box-none"
   },
-  bottomBarCard: {
+  floatingBarContent: {
     width: "100%",
-    borderRadius: 32,
-    paddingVertical: 12,
+    maxWidth: 520,
     paddingHorizontal: 20,
-    backgroundColor: "rgba(255, 252, 254, 0.78)",
-    overflow: "hidden",
-    shadowColor: "rgba(200, 189, 205, 0.45)",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 26,
-    elevation: 12
-  },
-  bottomBarGlow: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.9
-  },
-  bottomBarContent: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     justifyContent: "space-between",
-    gap: 16
+    gap: 18
   },
-  restartButton: {
-    width: 72,
-    borderRadius: 24
+  roundButton: {
+    borderRadius: 999,
+    overflow: "hidden"
   },
-  restartButtonPressed: {
-    transform: [{ translateY: 2 }]
+  roundButtonPressed: {
+    opacity: 0.85
   },
-  restartCard: {
-    borderRadius: 24,
+  roundButtonCard: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    padding: 0,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.4)"
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.45)",
+    shadowColor: "rgba(166, 139, 210, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    elevation: 8
   },
-  restartIcon: {
-    color: "#111111",
-    fontSize: 20,
-    fontWeight: "700"
-  },
-  finishButton: {
+  dictionaryPressable: {
     flex: 1,
-    borderRadius: 28
+    minWidth: "52%",
+    borderRadius: 999,
+    overflow: "hidden"
   },
-  finishButtonPressed: {
-    transform: [{ scale: 0.98 }]
+  dictionaryRaised: {
+    transform: [{ translateY: -6 }]
   },
-  finishCard: {
-    borderRadius: 28,
-    paddingVertical: 16,
+  dictionaryPressablePressed: {
+    opacity: 0.92
+  },
+  dictionaryGlass: {
+    width: "100%",
+    height: 56,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.4)"
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.45)",
+    shadowColor: "rgba(148, 152, 205, 0.4)",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.45,
+    shadowRadius: 30,
+    elevation: 14
   },
-  finishButtonText: {
-    color: "#111111",
+  dictionaryLabel: {
     fontSize: 16,
     fontWeight: "700",
-    letterSpacing: 0.4
+    letterSpacing: 0.4,
+    textTransform: "lowercase",
+    color: "#1F1324"
   },
   historyOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -839,7 +894,7 @@ const styles = StyleSheet.create({
   },
   historyBubbleUser: {
     alignSelf: "flex-end",
-    backgroundColor: "rgba(255, 212, 238, 0.9)"
+    backgroundColor: "rgba(255, 222, 210, 0.92)"
   },
   historyBubbleAssistant: {
     alignSelf: "flex-start",
@@ -913,7 +968,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255, 140, 196, 0.9)"
+    backgroundColor: "rgba(224, 79, 40, 0.9)"
   },
   finishConfirmPrimaryText: {
     fontSize: 15,
