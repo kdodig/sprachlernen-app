@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react"
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native"
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Modal, ScrollView } from "react-native"
 import type { PressableStateCallbackType } from "react-native"
 import { useRouter } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
-import GlassCard from "../lib/GlassCard"
+import GlassCard from "../lib/components/GlassCard"
+import GooeyOrb from "../lib/components/GooeyOrb"
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio"
 import { chatReply, sttUpload } from "../lib/api"
 import { startRecording, stopRecording, type RecorderHandle } from "../lib/audio"
@@ -48,6 +49,8 @@ export default function ConversationScreen(): ReactElement {
   const [recording, setRecording] = useState<RecorderHandle | null>(null)
   const [busy, setBusy] = useState(false)
   const [hasPressed, setHasPressed] = useState(false)
+  const [historyVisible, setHistoryVisible] = useState(false)
+  const [finishConfirmVisible, setFinishConfirmVisible] = useState(false)
   const isHeldRef = useRef(false)
   const recordingRef = useRef<RecorderHandle | null>(null)
   const playingSoundRef = useRef<AudioPlayer | null>(null)
@@ -152,6 +155,7 @@ export default function ConversationScreen(): ReactElement {
   useEffect(() => {
     if (activeHistory.length === 0) {
       sessionStartedAtRef.current = Date.now()
+      setHistoryVisible(false)
     }
   }, [activeHistory.length])
 
@@ -185,6 +189,15 @@ export default function ConversationScreen(): ReactElement {
     },
     [appendMessage, appendMessageForLang, targetLang]
   )
+
+  const handleShowHistory = useCallback(() => {
+    if (activeHistory.length === 0) return
+    setHistoryVisible(true)
+  }, [activeHistory.length])
+
+  const handleCloseHistory = useCallback(() => {
+    setHistoryVisible(false)
+  }, [])
 
   const handleStart = useCallback(async () => {
     if (busy || recording) return
@@ -300,21 +313,17 @@ export default function ConversationScreen(): ReactElement {
   ])
 
   const handleFinishConversation = useCallback(() => {
-    if (activeHistory.length === 0) {
-      void finalizeConversation()
-      return
-    }
-    Alert.alert("Session beenden?", "Moechtest du die Session wirklich abschliessen?", [
-      { text: "Weiter ueben", style: "cancel" },
-      {
-        text: "Belohnung anzeigen",
-        style: "destructive",
-        onPress: () => {
-          void finalizeConversation()
-        }
-      }
-    ])
-  }, [activeHistory.length, finalizeConversation])
+    setFinishConfirmVisible(true)
+  }, [])
+
+  const handleCloseFinishConfirm = useCallback(() => {
+    setFinishConfirmVisible(false)
+  }, [])
+
+  const handleConfirmFinish = useCallback(() => {
+    setFinishConfirmVisible(false)
+    void finalizeConversation()
+  }, [finalizeConversation])
 
   const handleRestart = useCallback(() => {
     void (async () => {
@@ -344,7 +353,7 @@ export default function ConversationScreen(): ReactElement {
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={["#FFFEFF", "#FBEFF8", "#F3E6F6", "#EADFD7", "#E1D4C8"]}
+        colors={["#FFF5FA", "#FDEDF6", "#F6E4F3", "#EEDFD9", "#E4D3C7"]}
         locations={[0, 0.25, 0.55, 0.8, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -373,35 +382,67 @@ export default function ConversationScreen(): ReactElement {
         />
         <View style={styles.container}>
           <View style={styles.progressContainer}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Session</Text>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressTitle}>Session</Text>
+            </View>
+            <GlassCard style={styles.progressTrackCard} intensity={25}>
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={["rgba(255,140,196,0.95)", "rgba(157,220,255,0.9)"]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[styles.progressIndicator, { width: progressPercent }]}
+                />
+              </View>
+            </GlassCard>
           </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressIndicator, { width: progressPercent }]} />
-          </View>
-        </View>
         <View style={styles.stage}>
           <View style={styles.pttWrapper}>
-            <GlassCard style={styles.messageCard}>
-              <Text style={styles.messageLabel}>Coach</Text>
-              <Text style={styles.messageBody}>
-                {latestBotMessage
-                  ? latestBotMessage.content
-                  : "Noch keine Antwort - starte die Session mit deiner Stimme."}
-              </Text>
-            </GlassCard>
+            <Pressable
+              onPress={handleShowHistory}
+              disabled={activeHistory.length === 0}
+              style={({ pressed }) => [
+                styles.messageCardPressable,
+                pressed ? styles.messageCardPressableActive : undefined
+              ]}
+            >
+              <GlassCard
+                style={[
+                  styles.messageCard,
+                  activeHistory.length === 0 ? styles.messageCardDisabled : undefined
+                ]}
+              >
+                <Text style={styles.messageLabel}>Coach</Text>
+                <Text style={styles.messageBody}>
+                  {latestBotMessage
+                    ? latestBotMessage.content
+                    : "Noch keine Antwort - starte die Session mit deiner Stimme."}
+                </Text>
+                <Text style={styles.messageHint}>
+                  {activeHistory.length === 0 ? "Noch keine Verlaeufe" : "Tippen für Chat-Historie"}
+                </Text>
+              </GlassCard>
+            </Pressable>
             <View style={styles.micContainer}>
               <Pressable
-                style={({ pressed }) => [styles.ptt, pressed || recording ? styles.pttActive : undefined]}
+                style={({ pressed }) => [
+                  styles.pttPressable,
+                  pressed || recording ? styles.pttPressableActive : undefined
+                ]}
                 onPressIn={handleStart}
                 onPressOut={handleStop}
                 disabled={busy}
               >
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.pttText}>{btnLabel}</Text>
-                )}
+                <View style={styles.gooeyWrapper}>
+                  <GooeyOrb size={200} colorA="#FF7CC7" colorB="#9DDCFF" speed={1.05} />
+                  <View style={styles.pttOverlay}>
+                    {busy ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.pttText}>{btnLabel}</Text>
+                    )}
+                  </View>
+                </View>
               </Pressable>
             </View>
           </View>
@@ -435,6 +476,79 @@ export default function ConversationScreen(): ReactElement {
           </View>
         </GlassCard>
       </View>
+      <Modal
+        transparent
+        visible={historyVisible}
+        animationType="fade"
+        onRequestClose={handleCloseHistory}
+      >
+        <View style={styles.historyOverlay}>
+          <Pressable style={styles.historyBackdrop} onPress={handleCloseHistory} />
+          <GlassCard style={styles.historySheet} intensity={42}>
+            <View style={styles.historyHeader}>
+              <View>
+                <Text style={styles.historyTitle}>Chat-Verlauf</Text>
+                <Text style={styles.historySubtitle}>Coach &amp; {user ?? "Du"}</Text>
+              </View>
+              <Pressable onPress={handleCloseHistory} accessibilityLabel="Verlauf schließen">
+                <Text style={styles.historyClose}>Schliessen</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              contentContainerStyle={styles.historyScroll}
+              showsVerticalScrollIndicator={false}
+            >
+              {activeHistory.length === 0 ? (
+                <Text style={styles.historyEmpty}>Noch keine Nachrichten vorhanden.</Text>
+              ) : (
+                activeHistory.map((msg, index) => {
+                  const isUser = msg.role === "user"
+                  return (
+                    <View
+                      key={`${msg.role}-${index}-${msg.content.slice(0, 6)}`}
+                      style={[
+                        styles.historyBubble,
+                        isUser ? styles.historyBubbleUser : styles.historyBubbleAssistant
+                      ]}
+                    >
+                      <Text style={styles.historyMeta}>{isUser ? user ?? "Du" : "Coach"}</Text>
+                      <Text style={styles.historyText}>{msg.content}</Text>
+                    </View>
+                  )
+                })
+              )}
+          </ScrollView>
+        </GlassCard>
+      </View>
+    </Modal>
+      <Modal
+        transparent
+        visible={finishConfirmVisible}
+        animationType="fade"
+        onRequestClose={handleCloseFinishConfirm}
+      >
+        <View style={styles.finishConfirmOverlay}>
+          <Pressable style={styles.finishConfirmBackdrop} onPress={handleCloseFinishConfirm} />
+          <GlassCard style={styles.finishConfirmCard} intensity={48}>
+            <Text style={styles.finishConfirmTitle}>Session beenden?</Text>
+            <Text style={styles.finishConfirmText}>
+              Moechtest du deine aktuelle Session abschliessen und zur Belohnung wechseln?
+            </Text>
+            <View style={styles.finishConfirmActions}>
+              <Pressable style={styles.finishConfirmButton} onPress={handleCloseFinishConfirm}>
+                <GlassCard style={styles.finishConfirmSecondary} intensity={35}>
+                  <Text style={styles.finishConfirmSecondaryText}>Weiter</Text>
+                </GlassCard>
+              </Pressable>
+              <Pressable style={styles.finishConfirmButton} onPress={handleConfirmFinish}>
+                <GlassCard style={styles.finishConfirmPrimary} intensity={45} tint="light">
+                  <Text style={styles.finishConfirmPrimaryText}>Beenden</Text>
+                </GlassCard>
+              </Pressable>
+            </View>
+          </GlassCard>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -478,11 +592,10 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent"
   },
   progressContainer: {
-    paddingBottom: 18
+    marginBottom: 24
   },
   progressHeader: {
-    paddingTop: 10,
-    marginBottom: 8
+    paddingBottom: 8
   },
   progressTitle: {
     fontSize: 14,
@@ -491,16 +604,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: "uppercase"
   },
-  progressTrack: {
-    height: 10,
+  progressTrackCard: {
     borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.35)",
+    padding: 4,
+    backgroundColor: "rgba(249, 231, 244, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.65)",
+    shadowColor: "rgba(226, 183, 210, 0.4)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 7
+  },
+  progressTrack: {
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     overflow: "hidden"
   },
   progressIndicator: {
     height: "100%",
     borderRadius: 999,
-    backgroundColor: "#E16632"
+    backgroundColor: "transparent",
+    overflow: "hidden"
   },
   stage: {
     flex: 1,
@@ -512,17 +638,27 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     position: "relative",
-    paddingTop: 110
+    paddingTop: 50
+  },
+  messageCardPressable: {
+    width: "100%"
+  },
+  messageCardPressableActive: {
+    transform: [{ scale: 0.99 }]
   },
   messageCard: {
     position: "absolute",
-    top: 0,
+    top: -70,
     width: "90%",
     alignSelf: "center",
     borderRadius: 24,
     padding: 24,
     backgroundColor: "rgba(255, 255, 255, 0.45)",
-    zIndex: 2
+    zIndex: 20,
+    elevation: 20
+  },
+  messageCardDisabled: {
+    opacity: 0.65
   },
   messageLabel: {
     fontSize: 12,
@@ -538,31 +674,45 @@ const styles = StyleSheet.create({
     color: "#111111",
     fontWeight: "500"
   },
+  messageHint: {
+    marginTop: 16,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    color: "#6B6B61"
+  },
   micContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    width: "100%"
+    width: "100%",
+    marginTop: 120,
+    zIndex: 1
   },
-  ptt: {
-    backgroundColor: "rgba(224, 79, 40, 0.9)",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+  pttPressable: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  pttPressableActive: {
+    transform: [{ scale: 0.97 }]
+  },
+  gooeyWrapper: {
+    width: 220,
+    height: 220,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.45)",
-    shadowColor: "#E04F28",
-    shadowOffset: { width: 0, height: 22 },
+    shadowColor: "#F48FD3",
+    shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.35,
-    shadowRadius: 32,
-    elevation: 9
+    shadowRadius: 38,
+    elevation: 14
   },
-  pttActive: {
-    backgroundColor: "#B03618"
+  pttOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16
   },
-  pttText: { color: "#fff", fontSize: 18, fontWeight: "600", textAlign: "center" },
+  pttText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
   bottomBar: {
     position: "absolute",
     left: 28,
@@ -572,7 +722,7 @@ const styles = StyleSheet.create({
   bottomBarCard: {
     width: "100%",
     borderRadius: 32,
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     backgroundColor: "rgba(255, 252, 254, 0.78)",
     overflow: "hidden",
@@ -631,5 +781,144 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.4
+  },
+  historyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24
+  },
+  historyBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(11, 12, 18, 0.55)"
+  },
+  historySheet: {
+    width: "92%",
+    maxHeight: "78%",
+    borderRadius: 32,
+    padding: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.85)"
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#2A2A23"
+  },
+  historySubtitle: {
+    fontSize: 12,
+    color: "#6B6B61",
+    letterSpacing: 0.4,
+    marginTop: 4
+  },
+  historyClose: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#E16632"
+  },
+  historyScroll: {
+    paddingVertical: 8,
+    paddingBottom: 16
+  },
+  historyEmpty: {
+    textAlign: "center",
+    color: "#6B6B61",
+    fontSize: 14,
+    paddingVertical: 32
+  },
+  historyBubble: {
+    padding: 14,
+    borderRadius: 22,
+    marginBottom: 12,
+    maxWidth: "88%"
+  },
+  historyBubbleUser: {
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(255, 212, 238, 0.9)"
+  },
+  historyBubbleAssistant: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.85)"
+  },
+  historyMeta: {
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "#96748E",
+    marginBottom: 6
+  },
+  historyText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#2A2A23"
+  },
+  finishConfirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24
+  },
+  finishConfirmBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(11, 12, 18, 0.55)"
+  },
+  finishConfirmCard: {
+    width: "86%",
+    borderRadius: 32,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.9)"
+  },
+  finishConfirmTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#2A2A23",
+    marginBottom: 8,
+    textAlign: "center"
+  },
+  finishConfirmText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: "#5C5C54",
+    textAlign: "center",
+    marginBottom: 24
+  },
+  finishConfirmActions: {
+    flexDirection: "row",
+    gap: 12
+  },
+  finishConfirmButton: {
+    flex: 1
+  },
+  finishConfirmSecondary: {
+    borderRadius: 26,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.7)"
+  },
+  finishConfirmSecondaryText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+    letterSpacing: 0.3
+  },
+  finishConfirmPrimary: {
+    borderRadius: 26,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 140, 196, 0.9)"
+  },
+  finishConfirmPrimaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111111",
+    letterSpacing: 0.3
   }
 })

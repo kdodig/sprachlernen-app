@@ -12,6 +12,8 @@ module.exports = function (api) {
       ]
     ],
     // Enable Expo Router and the `@/` alias resolution at build time
-    plugins: [require.resolve("expo-router/babel")]
+    plugins: [require.resolve("expo-router/babel"),
+              "react-native-reanimated/plugin"
+    ]
   }
 }
