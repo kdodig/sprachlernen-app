@@ -6,7 +6,7 @@ export default function DictionaryScreen(): ReactElement {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <Text style={styles.title}>
-          {"hier erscheinen sp\u00E4ter deine gelernten w\u00F6rter"}
+          {"hier penis sp\u00E4ter deine gelernten w\u00F6rter"}
         </Text>
       </View>
     </SafeAreaView>
